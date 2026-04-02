@@ -1,0 +1,10 @@
+ktv-node/
+├── api/                # Vercel 服务端接口
+│   └── index.js        # 核心 API（替代原 api.php）
+├── public/             # 前端静态文件
+│   ├── admin.html
+│   ├── index.html
+│   ├── play.html
+│   ├── bg1.js ~ bg6.js
+├── package.json        # 项目配置
+└── vercel.json         # Vercel 部署配置

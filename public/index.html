@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KTV点歌系统</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:#121212;color:#fff;font-family:Arial;padding:20px}
+        #loginBox{max-width:400px;margin:100px auto;padding:30px;background:#222;border-radius:12px}
+        #regBox{display:none;max-width:400px;margin:100px auto;padding:30px;background:#222;border-radius:12px}
+        #loginBox input,#regBox input{width:100%;margin:10px 0;padding:12px;border-radius:8px;border:none}
+        #loginBox button,#regBox button{width:100%;padding:12px;background:#ff3c3c;color:#fff;border:none;border-radius:8px;margin-top:5px}
+        #btnReg{background:#666 !important}
+        #btnBack{background:#666 !important}
+        #mainContent{display:none}
+        #search{max-width:800px;margin:0 auto 20px;display:flex}
+        #search input{flex:1;padding:12px;border-radius:8px 0 0 8px;border:none}
+        #search button{padding:12px 20px;background:#ff3c3c;color:#fff;border:none;border-radius:0 8px 8px 0}
+        #list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:15px}
+        .item{background:#222;padding:15px;border-radius:10px}
+        .item button{background:#00c6ff;color:#fff;border:none;padding:8px 12px;border-radius:6px;margin-top:10px}
+        #panel{position:fixed;top:0;right:-320px;width:320px;height:100vh;background:#111;padding:20px;transition:.3s;z-index:99}
+        #panel.show{right:0}
+        .toggle{position:fixed;right:0;top:50%;transform:translateY(-50%);background:#ff3c3c;color:#fff;border:none;padding:12px 8px;writing-mode:vertical-lr;border-radius:8px 0 0 8px;z-index:99}
+        .song-item{padding:10px;background:#222;margin:8px 0;border-radius:8px}
+        .btn-bar button{margin:0 4px;padding:4px 8px;background:#333;color:#fff;border:none;border-radius:4px}
+    </style>
+</head>
+<body>
+
+<!-- 登录 -->
+<div id="loginBox">
+    <h3>用户登录</h3>
+    <input id="loginUser" placeholder="账号">
+    <input id="loginPwd" type="password" placeholder="密码">
+    <button onclick="doLogin()">登录</button>
+    <button id="btnReg" onclick="showReg()">去注册</button>
+</div>
+
+<!-- 注册 -->
+<div id="regBox">
+    <h3>用户注册</h3>
+    <input id="regUser" placeholder="账号">
+    <input id="regPwd" placeholder="密码">
+    <button onclick="doReg()">注册</button>
+    <button id="btnBack" onclick="showLogin()">返回登录</button>
+</div>
+
+<!-- 主内容（登录前隐藏） -->
+<div id="mainContent">
+    <div id="search">
+        <input id="kw" placeholder="搜索歌曲/歌手">
+        <button onclick="searchSong()">搜索</button>
+    </div>
+    <div id="list"></div>
+</div>
+
+<!-- 点歌列表 -->
+<div id="panel"></div>
+<button class="toggle" onclick="document.getElementById('panel').classList.toggle('show')">点歌列表</button>
+
+<script>
+let uid = 0;
+const loginBox = document.getElementById('loginBox');
+const regBox = document.getElementById('regBox');
+const mainBox = document.getElementById('mainContent');
+
+function showReg() {
+    loginBox.style.display = 'none';
+    regBox.style.display = 'block';
+}
+function showLogin() {
+    regBox.style.display = 'none';
+    loginBox.style.display = 'block';
+}
+
+// 注册
+async function doReg() {
+    try {
+        let res = await fetch('api.php?action=reg', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'user=' + regUser.value + '&pwd=' + regPwd.value
+        });
+        let d = await res.json();
+        alert(d.msg);
+        if (d.code === 0) showLogin();
+    } catch (e) { console.error(e); }
+}
+
+// 登录
+async function doLogin() {
+    try {
+        let res = await fetch('api.php?action=login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'user=' + loginUser.value + '&pwd=' + loginPwd.value
+        });
+        let d = await res.json();
+        if (d.code === 0) {
+            uid = d.uid;
+            loginBox.style.display = 'none';
+            regBox.style.display = 'none';
+            mainBox.style.display = 'block';
+            loadList(); // 登录后仅加载一次
+        } else {
+            alert(d.msg);
+        }
+    } catch (e) { console.error(e); }
+}
+
+// 搜索
+async function searchSong() {
+    let res = await fetch('https://music-api.gdstudio.xyz/api.php?types=search&source=netease&name=' + encodeURIComponent(kw.value));
+    let d = await res.json();
+    list.innerHTML = '';
+    d.forEach(s => {
+        let div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = `<h4>${s.name}</h4><p>${s.artist}</p><p>${s.album}</p><button onclick="addSong('${s.id}','${s.name}','${s.artist}','${s.source}')">点歌</button>`;
+        list.appendChild(div);
+    });
+}
+
+// 点歌（新增后刷新列表）
+async function addSong(tid, name, artist, source) {
+    await fetch('api.php?action=add_song', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `uid=${uid}&tid=${tid}&name=${name}&artist=${artist}&source=${source}`
+    });
+    loadList(); // 新增后仅刷新一次
+}
+
+// 加载列表
+async function loadList() {
+    let res = await fetch('api.php?action=my_list&uid=' + uid);
+    let d = await res.json();
+    panel.innerHTML = '<h3>我的点歌</h3>';
+    d.data.forEach(s => {
+        let div = document.createElement('div');
+        div.className = 'song-item';
+        div.innerHTML = `${s.song_name} - ${s.artist}
+        <div class="btn-bar">
+            <button onclick="sortSong(${s.id},'up')">上移</button>
+            <button onclick="sortSong(${s.id},'down')">下移</button>
+            <button onclick="delSong(${s.id})" style="background:#f44">删除</button>
+        </div>`;
+        panel.appendChild(div);
+    });
+}
+
+// 排序（修改后刷新列表）
+async function sortSong(id, type) {
+    await fetch('api.php?action=sort', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `id=${id}&type=${type}`
+    });
+    loadList(); // 修改后仅刷新一次
+}
+
+// 删除（删除后刷新列表）
+async function delSong(id) {
+    await fetch('api.php?action=del_song&id=' + id);
+    loadList(); // 删除后仅刷新一次
+}
+</script>
+</body>
+</html>
