@@ -1,72 +1,171 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html>
 <head>
-    <meta charset="UTF-8">
+    <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KTV点歌系统</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
-        body { background: #111; color: #fff; padding: 20px; }
-        .box { max-width: 400px; margin: 50px auto; padding: 30px; background: #222; border-radius: 12px; }
-        input { width: 100%; padding: 12px; margin: 10px 0; background: #333; border: none; border-radius: 6px; color: #fff; font-size: 16px; }
-        button { width: 100%; padding: 12px; margin-top: 10px; background: #ff3c3c; border: none; border-radius: 6px; color: #fff; font-size: 16px; cursor: pointer; }
-        .tip { margin-top: 15px; text-align: center; cursor: pointer; color: #aaa; }
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:#121212;color:#fff;font-family:Arial;padding:20px}
+        #loginBox{max-width:400px;margin:100px auto;padding:30px;background:#222;border-radius:12px}
+        #regBox{display:none;max-width:400px;margin:100px auto;padding:30px;background:#222;border-radius:12px}
+        #loginBox input,#regBox input{width:100%;margin:10px 0;padding:12px;border-radius:8px;border:none}
+        #loginBox button,#regBox button{width:100%;padding:12px;background:#ff3c3c;color:#fff;border:none;border-radius:8px;margin-top:5px}
+        #btnReg{background:#666 !important}
+        #btnBack{background:#666 !important}
+        #mainContent{display:none}
+        #search{max-width:800px;margin:0 auto 20px;display:flex}
+        #search input{flex:1;padding:12px;border-radius:8px 0 0 8px;border:none}
+        #search button{padding:12px 20px;background:#ff3c3c;color:#fff;border:none;border-radius:0 8px 8px 0}
+        #list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:15px}
+        .item{background:#222;padding:15px;border-radius:10px}
+        .item button{background:#00c6ff;color:#fff;border:none;padding:8px 12px;border-radius:6px;margin-top:10px}
+        #panel{position:fixed;top:0;right:-320px;width:320px;height:100vh;background:#111;padding:20px;transition:.3s;z-index:99}
+        #panel.show{right:0}
+        .toggle{position:fixed;right:0;top:50%;transform:translateY(-50%);background:#ff3c3c;color:#fff;border:none;padding:12px 8px;writing-mode:vertical-lr;border-radius:8px 0 0 8px;z-index:99}
+        .song-item{padding:10px;background:#222;margin:8px 0;border-radius:8px}
+        .btn-bar button{margin:0 4px;padding:4px 8px;background:#333;color:#fff;border:none;border-radius:4px}
     </style>
 </head>
 <body>
-    <div class="box" id="loginBox">
-        <h2>用户登录</h2>
-        <input id="loginUser" placeholder="用户名">
-        <input id="loginPwd" type="password" placeholder="密码">
-        <button onclick="login()">登录</button>
-        <div class="tip" onclick="showReg()">没有账号？去注册</div>
+
+<div id="loginBox">
+    <h3>用户登录</h3>
+    <input id="loginUser" placeholder="账号">
+    <input id="loginPwd" type="password" placeholder="密码">
+    <button onclick="doLogin()">登录</button>
+    <button id="btnReg" onclick="showReg()">去注册</button>
+</div>
+
+<div id="regBox">
+    <h3>用户注册</h3>
+    <input id="regUser" placeholder="账号">
+    <input id="regPwd" placeholder="密码">
+    <button onclick="doReg()">注册</button>
+    <button id="btnBack" onclick="showLogin()">返回登录</button>
+</div>
+
+<div id="mainContent">
+    <div id="search">
+        <input id="kw" placeholder="搜索歌曲/歌手">
+        <button onclick="searchSong()">搜索</button>
     </div>
+    <div id="list"></div>
+</div>
 
-    <div class="box" id="regBox" style="display: none;">
-        <h2>用户注册</h2>
-        <input id="regUser" placeholder="用户名">
-        <input id="regPwd" type="password" placeholder="密码">
-        <button onclick="reg()">注册</button>
-        <div class="tip" onclick="showLogin()">已有账号？去登录</div>
-    </div>
+<div id="panel"></div>
+<button class="toggle" onclick="document.getElementById('panel').classList.toggle('show')">点歌列表</button>
 
-    <script>
-        let uid = null;
-        function showReg() { loginBox.style.display = 'none'; regBox.style.display = 'block'; }
-        function showLogin() { regBox.style.display = 'none'; loginBox.style.display = 'block'; }
+<script>
+let uid = 0;
+const loginBox = document.getElementById('loginBox');
+const regBox = document.getElementById('regBox');
+const mainBox = document.getElementById('mainContent');
 
-        // 登录（已改接口）
-        async function login() {
-            const user = loginUser.value.trim();
-            const pwd = loginPwd.value.trim();
-            const res = await fetch('/api/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user, pwd })
-            });
-            const data = await res.json();
-            if (data.code === 0) {
-                uid = data.uid;
-                alert('登录成功');
-                location.href = 'play.html?uid=' + uid;
-            } else {
-                alert('账号或密码错误');
-            }
+function showReg() {
+    loginBox.style.display = 'none';
+    regBox.style.display = 'block';
+}
+function showLogin() {
+    regBox.style.display = 'none';
+    loginBox.style.display = 'block';
+}
+
+// 注册 ✅ 修复
+async function doReg() {
+    try {
+        let res = await fetch('/api/reg', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'user=' + encodeURIComponent(regUser.value) + '&pwd=' + encodeURIComponent(regPwd.value)
+        });
+        let d = await res.json();
+        alert(d.msg);
+        if (d.code === 0) showLogin();
+    } catch (e) { console.error(e); }
+}
+
+// 登录 ✅ 修复
+async function doLogin() {
+    try {
+        let res = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'user=' + encodeURIComponent(loginUser.value) + '&pwd=' + encodeURIComponent(loginPwd.value)
+        });
+        let d = await res.json();
+        if (d.code === 0) {
+            uid = d.uid;
+            loginBox.style.display = 'none';
+            regBox.style.display = 'none';
+            mainBox.style.display = 'block';
+            loadList();
+        } else {
+            alert(d.msg);
         }
+    } catch (e) { console.error(e); }
+}
 
-        // 注册（已改接口）
-        async function reg() {
-            const user = regUser.value.trim();
-            const pwd = regPwd.value.trim();
-            const res = await fetch('/api/reg', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user, pwd })
-            });
-            const data = await res.json();
-            alert(data.msg);
-            if (data.code === 0) showLogin();
-        }
-    </script>
+// 搜索 ✅ 正常
+async function searchSong() {
+    try {
+        let res = await fetch('https://music-api.gdstudio.xyz/api.php?types=search&source=netease&name=' + encodeURIComponent(kw.value));
+        let d = await res.json();
+        list.innerHTML = '';
+        d.forEach(s => {
+            let div = document.createElement('div');
+            div.className = 'item';
+            div.innerHTML = `<h4>${s.name}</h4><p>${s.artist}</p><p>${s.album}</p><button onclick="addSong('${s.id}','${s.name}','${s.artist}','${s.source}')">点歌</button>`;
+            list.appendChild(div);
+        });
+    } catch (e) {}
+}
+
+// 点歌 ✅ 修复
+async function addSong(tid, name, artist, source) {
+    await fetch('/api/add_song', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `uid=${uid}&tid=${encodeURIComponent(tid)}&name=${encodeURIComponent(name)}&artist=${encodeURIComponent(artist)}&source=${encodeURIComponent(source)}`
+    });
+    loadList();
+}
+
+// 加载点歌列表 ✅ 修复
+async function loadList() {
+    let res = await fetch('/api/my_list?uid=' + uid);
+    let d = await res.json();
+    panel.innerHTML = '<h3>我的点歌</h3>';
+    if (d.data) {
+        d.data.forEach(s => {
+            let div = document.createElement('div');
+            div.className = 'song-item';
+            div.innerHTML = `${s.song_name} - ${s.artist}
+            <div class="btn-bar">
+                <button onclick="sortSong(${s.id},'up')">上移</button>
+                <button onclick="sortSong(${s.id},'down')">下移</button>
+                <button onclick="delSong(${s.id})" style="background:#f44">删除</button>
+            </div>`;
+            panel.appendChild(div);
+        });
+    }
+}
+
+// 排序 ✅ 修复
+async function sortSong(id, type) {
+    await fetch('/api/sort', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `id=${id}&type=${type}`
+    });
+    loadList();
+}
+
+// 删除 ✅ 修复
+async function delSong(id) {
+    await fetch('/api/del_song?id=' + id);
+    loadList();
+}
+</script>
 </body>
 </html>
