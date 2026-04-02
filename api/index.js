@@ -1,24 +1,45 @@
 const express = require('express');
-const mysql = require('mysql2/promise');
 const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
+const { put, get } = require('@vercel/blob');
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const pool = mysql.createPool({
-  host: 'sql210.infinityfree.com',
-  user: 'if0_41371583',
-  password: 'Lx19840802',
-  database: 'if0_41371583_ktv',
-  charset: 'utf8mb4'
-});
+// 工具：流转字符串
+function streamToString(stream) {
+  return new Promise((resolve, reject) => {
+    let str = '';
+    stream.on('data', chunk => str += chunk.toString());
+    stream.on('end', () => resolve(str));
+    stream.on('error', reject);
+  });
+}
 
-// 管理员登录
-app.post('/api/admin_login', async (req, res) => {
+// 读取 Blob 文件
+async function readBlob(filename, defaultValue) {
+  try {
+    const blob = await get(filename);
+    const str = await streamToString(blob.stream);
+    return JSON.parse(str);
+  } catch {
+    return defaultValue;
+  }
+}
+
+// 写入 Blob 文件
+async function writeBlob(filename, data) {
+  await put(filename, JSON.stringify(data, null, 2), {
+    access: 'public',
+    contentType: 'application/json'
+  });
+}
+
+// ------------------------------
+// 1. 管理员登录
+// ------------------------------
+app.post('/api/admin_login', (req, res) => {
   const { user, pwd } = req.body;
   if (user === 'admin' && pwd === 'admin888') {
     return res.json({ code: 0, msg: '登录成功' });
@@ -26,113 +47,136 @@ app.post('/api/admin_login', async (req, res) => {
   res.json({ code: 1, msg: '账号或密码错误' });
 });
 
-// ======================
-// ✅ 修复：读取配置（从数据库读）
-// ======================
+// ------------------------------
+// 2. 获取系统配置（Blob）
+// ------------------------------
 app.get('/api/get_config', async (req, res) => {
-  try {
-    const [rows] = await pool.query("SELECT * FROM config WHERE id=1");
-    if (rows.length > 0) {
-      return res.json({ code: 0, data: rows[0] });
-    }
-  } catch (e) {}
-  
-  res.json({
-    code: 0,
-    data: {
-      db_host: 'sql210.infinityfree.com',
-      db_user: 'if0_41371583',
-      db_pwd: 'Lx19840802',
-      db_name: 'if0_41371583_ktv',
-      lyric_color: '#ffffff',
-      lyric_active_color: '#ff3c3c',
-      lyric_size: 28,
-      volume: 80
-    }
-  });
+  const defaultConfig = {
+    db_host: "localhost",
+    db_user: "root",
+    db_pwd: "",
+    db_name: "ktv_system",
+    lyric_color: "#ffffff",
+    lyric_active_color: "#ff3c3c",
+    lyric_size: 28,
+    volume: 80
+  };
+  const data = await readBlob('config.json', defaultConfig);
+  res.json({ code: 0, data });
 });
 
-// ======================
-// ✅ 修复：保存配置（真实写入数据库）
-// ======================
+// ------------------------------
+// 3. 保存系统配置（Blob）
+// ------------------------------
 app.post('/api/save_config', async (req, res) => {
-  try {
-    const { 
-      db_host, db_user, db_pwd, db_name,
-      lyric_color, lyric_active_color, lyric_size, volume
-    } = req.body;
-
-    await pool.query(`
-      REPLACE INTO config 
-      (id, db_host, db_user, db_pwd, db_name, lyric_color, lyric_active_color, lyric_size, volume) 
-      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [db_host, db_user, db_pwd, db_name, lyric_color, lyric_active_color, lyric_size, volume]);
-
-    return res.json({ code: 0, msg: "保存成功" });
-  } catch (e) {
-    console.error(e);
-    res.json({ code: 1, msg: "保存失败" });
-  }
+  await writeBlob('config.json', req.body);
+  res.json({ code: 0, msg: '保存成功' });
 });
 
-// 用户登录
-app.post('/api/login', async (req, res) => {
-  try {
-    const { user, pwd } = req.body;
-    const [rows] = await pool.query('SELECT id FROM users WHERE username=? AND password=?', [user, pwd]);
-    if (rows.length) return res.json({ code: 0, uid: rows[0].id });
-  } catch (e) {}
-  res.json({ code: 1, msg: '账号密码错误' });
-});
-
-// 用户注册
+// ------------------------------
+// 4. 用户注册（Blob）
+// ------------------------------
 app.post('/api/reg', async (req, res) => {
-  try {
-    const { user, pwd } = req.body;
-    const [rows] = await pool.query('SELECT id FROM users WHERE username=?', [user]);
-    if (rows.length) return res.json({ code: 1, msg: '用户名已存在' });
-    await pool.query('INSERT INTO users(username,password) VALUES(?,?)', [user, pwd]);
-    return res.json({ code: 0, msg: '注册成功' });
-  } catch (e) {}
-  res.json({ code: 1, msg: '注册失败' });
+  const { user, pwd } = req.body;
+  let users = await readBlob('users.json', []);
+  const exists = users.some(u => u.username === user);
+  if (exists) return res.json({ code: 1, msg: '用户名已存在' });
+
+  users.push({
+    id: Date.now(),
+    username: user,
+    password: pwd,
+    create_time: new Date().toISOString()
+  });
+
+  await writeBlob('users.json', users);
+  res.json({ code: 0, msg: '注册成功' });
 });
 
-// 获取歌单
-app.get('/api/my_list', async (req, res) => {
-  try {
-    const [rows] = await pool.query(
-      'SELECT id,song_name,artist,source FROM song_list WHERE user_id=? ORDER BY sort ASC,id ASC',
-      [req.query.uid]
-    );
-    return res.json({ code: 0, data: rows });
-  } catch (e) {}
-  res.json({ code: 1, data: [] });
+// ------------------------------
+// 5. 用户登录（Blob）
+// ------------------------------
+app.post('/api/login', async (req, res) => {
+  const { user, pwd } = req.body;
+  const users = await readBlob('users.json', []);
+  const u = users.find(u => u.username === user && u.password === pwd);
+  if (u) return res.json({ code: 0, uid: u.id });
+  res.json({ code: 1, msg: '账号或密码错误' });
 });
 
-// 删除歌曲
-app.get('/api/del_song', async (req, res) => {
-  try {
-    await pool.query('DELETE FROM song_list WHERE id=?', [req.query.id]);
-  } catch (e) {}
-  res.json({ code: 0 });
-});
-
-// 添加歌曲
+// ------------------------------
+// 6. 添加歌曲（Blob）
+// ------------------------------
 app.post('/api/add_song', async (req, res) => {
-  try {
-    const { uid, tid, name, artist, source } = req.body;
-    const [r] = await pool.query('SELECT MAX(sort) as m FROM song_list WHERE user_id=?', [uid]);
-    const sort = (r[0].m || 0) + 1;
-    await pool.query(
-      'INSERT INTO song_list(user_id,track_id,song_name,artist,source,sort) VALUES(?,?,?,?,?,?)',
-      [uid, tid, name, artist, source, sort]
-    );
-  } catch (e) {}
+  const { uid, tid, name, artist, source } = req.body;
+  let list = await readBlob('song_list.json', []);
+
+  const maxSort = list
+    .filter(s => s.user_id == uid)
+    .reduce((max, s) => Math.max(max, s.sort || 0), 0);
+
+  list.push({
+    id: Date.now(),
+    user_id: parseInt(uid),
+    track_id: tid,
+    song_name: name,
+    artist: artist,
+    source: source || 'netease',
+    sort: maxSort + 1,
+    create_time: new Date().toISOString()
+  });
+
+  await writeBlob('song_list.json', list);
   res.json({ code: 0 });
 });
 
-// 排序
+// ------------------------------
+// 7. 获取我的歌单（Blob）
+// ------------------------------
+app.get('/api/my_list', async (req, res) => {
+  const { uid } = req.query;
+  const list = await readBlob('song_list.json', []);
+  const mySongs = list
+    .filter(s => s.user_id == uid)
+    .sort((a, b) => a.sort - b.sort || a.id - b.id);
+  res.json({ code: 0, data: mySongs });
+});
+
+// ------------------------------
+// 8. 删除歌曲（Blob）
+// ------------------------------
+app.get('/api/del_song', async (req, res) => {
+  const { id } = req.query;
+  let list = await readBlob('song_list.json', []);
+  list = list.filter(s => s.id != id);
+  await writeBlob('song_list.json', list);
+  res.json({ code: 0 });
+});
+
+// ------------------------------
+// 9. 歌曲排序（Blob）
+// ------------------------------
 app.post('/api/sort', async (req, res) => {
+  const { id, type } = req.body;
+  let list = await readBlob('song_list.json', []);
+  const song = list.find(s => s.id == id);
+  if (!song) return res.json({ code: 1 });
+
+  const userSongs = list
+    .filter(s => s.user_id === song.user_id)
+    .sort((a, b) => a.sort - b.sort);
+
+  const index = userSongs.findIndex(s => s.id == id);
+  if (type === 'up' && index > 0) {
+    [userSongs[index].sort, userSongs[index - 1].sort] =
+    [userSongs[index - 1].sort, userSongs[index].sort];
+  }
+  if (type === 'down' && index < userSongs.length - 1) {
+    [userSongs[index].sort, userSongs[index + 1].sort] =
+    [userSongs[index + 1].sort, userSongs[index].sort];
+  }
+
+  await writeBlob('song_list.json', list);
   res.json({ code: 0 });
 });
 
