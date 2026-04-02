@@ -1,48 +1,39 @@
 const express = require('express');
 const cors = require('cors');
-const { put } = require('@vercel/blob');
+const { put, get } = require('@vercel/blob');
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 内存缓存（避免重复创建）
-let BLOB_URLS = {
-  config: null,
-  users: null,
-  song_list: null
-};
-
-// =========================
-// ✅ 官方唯一正确写法：保存
-// =========================
-async function save(file, data) {
-  const res = await put(file, JSON.stringify(data, null, 2), {
+// =============================================================================
+// ✅【核心修复】强制覆盖同名文件，100% 不生成随机后缀
+// =============================================================================
+async function writeBlob(path, data) {
+  return await put(path, JSON.stringify(data, null, 2), {
+    addRandomSuffix: false,    // 强制关闭随机字符串
+    cacheControl: 'no-cache',  // 不缓存
+    contentType: 'application/json',
     access: 'public',
-    contentType: 'application/json'
   });
-  return res.url;
 }
 
-// =========================
-// ✅ 读取（通过公开 URL）
-// =========================
-async function load(url) {
+async function readBlob(path) {
   try {
-    const res = await fetch(url);
-    return await res.json();
+    const blob = await get(path, { noCache: true });
+    const res = await fetch(blob.url);
+    const text = await res.text();
+    return JSON.parse(text);
   } catch (e) {
     return null;
   }
 }
 
-// =========================
-// 初始化（只跑一次）
-// =========================
+// 初始化
 async function init() {
-  if (!BLOB_URLS.config) {
-    BLOB_URLS.config = await save("config.json", {
+  if (!await readBlob("config.json")) {
+    await writeBlob("config.json", {
       db_host: "localhost",
       db_user: "root",
       db_pwd: "",
@@ -53,56 +44,84 @@ async function init() {
       volume: "80"
     });
   }
-  if (!BLOB_URLS.users) {
-    BLOB_URLS.users = await save("users.json", [
-      { id: 1, username: "user1", password: "123456" }
+  if (!await readBlob("users.json")) {
+    await writeBlob("users.json", [
+      { id:1, username:"user1", password:"123456" },
+      { id:2, username:"user2", password:"123456" }
     ]);
   }
-  if (!BLOB_URLS.song_list) {
-    BLOB_URLS.song_list = await save("song_list.json", []);
+  if (!await readBlob("song_list.json")) {
+    await writeBlob("song_list.json", []);
   }
 }
 init().catch(console.error);
 
-// =========================
-// 接口
-// =========================
-
+// -------------------------- 接口 --------------------------
 app.post("/api/admin_login", (req, res) => {
   const { user, pwd } = req.body;
   if (user === "admin" && pwd === "admin888") {
-    return res.json({ code: 0, msg: "登录成功" });
+    return res.json({ code:0, msg:"成功" });
   }
-  res.json({ code: 1, msg: "账号或密码错误" });
+  res.json({ code:1, msg:"账号或密码错误" });
 });
 
-// ✅ 读取配置（官方方式）
 app.get("/api/get_config", async (req, res) => {
-  if (!BLOB_URLS.config) return res.json({ code:0, data:{} });
-  const data = await load(BLOB_URLS.config);
-  res.json({ code:0, data });
+  const data = await readBlob("config.json");
+  res.json({ code:0, data: data || {} });
 });
 
-// ✅ 保存配置（官方方式）
 app.post("/api/save_config", async (req, res) => {
-  BLOB_URLS.config = await save("config.json", req.body);
+  await writeBlob("config.json", req.body);
   res.json({ code:0, msg:"保存成功" });
 });
 
-// 登录
 app.post("/api/login", async (req, res) => {
   const { user, pwd } = req.body;
-  const list = await load(BLOB_URLS.users);
-  const u = list.find(i => i.username === user && i.password === pwd);
+  const users = await readBlob("users.json") || [];
+  const u = users.find(u => u.username === user && u.password === pwd);
   if (u) return res.json({ code:0, uid: u.id });
   res.json({ code:1, msg:"账号或密码错误" });
 });
 
-// 其他接口保持最简
-app.post("/api/reg", async (req, res) => res.json({ code:0 }));
-app.get("/api/my_list", async (req, res) => res.json({ code:0, data:[] }));
-app.post("/api/add_song", async (req, res) => res.json({ code:0 }));
-app.get("/api/del_song", async (req, res) => res.json({ code:0 }));
-app.post("/api/sort", async (req, res) => res.json({ code:0 }));
+app.post("/api/reg", async (req, res) => {
+  const { user, pwd } = req.body;
+  const users = await readBlob("users.json") || [];
+  if (users.some(x => x.username === user)) {
+    return res.json({ code:1, msg:"已存在" });
+  }
+  users.push({ id: Date.now(), username: user, password: pwd });
+  await writeBlob("users.json", users);
+  res.json({ code:0, msg:"注册成功" });
+});
+
+app.get("/api/my_list", async (req, res) => {
+  const { uid } = req.query;
+  const list = await readBlob("song_list.json") || [];
+  res.json({ code:0, data: list.filter(s => s.user_id == uid).sort((a,b)=>a.sort-b.sort) });
+});
+
+app.post("/api/add_song", async (req, res) => {
+  const { uid, tid, name, artist, source } = req.body;
+  const list = await readBlob("song_list.json") || [];
+  const max = list.filter(s => s.user_id == uid).reduce((m,s)=>Math.max(m,s.sort||0),0);
+  list.push({
+    id: Date.now(), user_id:+uid, track_id:tid, song_name:name, artist:artist,
+    source: source||"netease", sort: max+1
+  });
+  await writeBlob("song_list.json", list);
+  res.json({ code:0 });
+});
+
+app.get("/api/del_song", async (req, res) => {
+  const { id } = req.query;
+  let list = await readBlob("song_list.json") || [];
+  list = list.filter(s => s.id != id);
+  await writeBlob("song_list.json", list);
+  res.json({ code:0 });
+});
+
+app.post("/api/sort", async (req, res) => {
+  res.json({ code:0 });
+});
 
 module.exports = app;
