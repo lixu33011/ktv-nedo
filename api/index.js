@@ -103,15 +103,36 @@ app.get("/api/my_list", async (req, res) => {
   res.json({ code: 0, data: list.filter(s => s.user_id == uid).sort((a,b)=>a.sort-b.sort) });
 });
 
-app.post("/api/add_song", async (req, res) => {
-  const { uid, tid, name, artist } = req.body;
-  const list = await load("song_list") || [];
-  const max = list.filter(s => s.user_id == uid).reduce((m,s)=>Math.max(m,s.sort||0),0);
-  list.push({ id: Date.now(), user_id:+uid, track_id:tid, song_name:name, artist:artist, sort:max+1 });
-  await save("song_list", list);
-  res.json({ code: 0 });
-});
+// 🔥 修复：歌曲上移下移（真正修改 sort 值）
+app.post("/api/sort", async (req, res) => {
+  try {
+    const { id, type } = req.body;
+    let list = await load("song_list") || [];
 
+    const song = list.find(s => s.id == id);
+    if (!song) return res.json({ code: 1 });
+
+    const userSongs = list
+      .filter(s => s.user_id === song.user_id)
+      .sort((a, b) => a.sort - b.sort);
+
+    const index = userSongs.findIndex(s => s.id == id);
+
+    if (type === "up" && index > 0) {
+      [userSongs[index].sort, userSongs[index-1].sort] = 
+      [userSongs[index-1].sort, userSongs[index].sort];
+    }
+    if (type === "down" && index < userSongs.length - 1) {
+      [userSongs[index].sort, userSongs[index+1].sort] = 
+      [userSongs[index+1].sort, userSongs[index].sort];
+    }
+
+    await save("song_list", list);
+    res.json({ code: 0 });
+  } catch (e) {
+    res.json({ code: 1 });
+  }
+});
 app.get("/api/del_song", async (req, res) => {
   const { id } = req.query;
   let list = await load("song_list") || [];
