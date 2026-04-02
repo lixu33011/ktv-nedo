@@ -1,43 +1,92 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>管理员后台</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <title>KTV管理员后台</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial; }
-        body { background: #111; color: #fff; padding: 20px; }
-        .admin-box { max-width: 400px; margin: 50px auto; padding: 30px; background: #222; border-radius: 12px; }
-        input { width: 100%; padding: 12px; margin: 10px 0; background: #333; border: none; border-radius: 6px; color: #fff; }
-        button { width: 100%; padding: 12px; background: #ff3c3c; border: none; border-radius: 6px; color: #fff; cursor: pointer; }
+        *{box-sizing:border-box}
+        body{max-width:600px;margin:30px auto;padding:20px;background:#1a1a2e;color:#fff;font-family:Arial}
+        .item{margin:15px 0}
+        label{display:block;margin-bottom:5px}
+        input,select{width:100%;padding:10px;border-radius:8px;border:none}
+        button{background:#ff3c3c;color:#fff;border:none;padding:12px 20px;border-radius:8px;width:100%;margin-top:20px}
     </style>
 </head>
 <body>
-    <div class="admin-box">
-        <h2>管理员登录</h2>
-        <input id="adminUser" placeholder="账号">
-        <input id="adminPwd" type="password" placeholder="密码">
-        <button onclick="adminLogin()">登录</button>
+    <h2>管理员登录</h2>
+    <input id="auser" placeholder="账号 admin">
+    <input id="apwd" type="password" placeholder="密码 admin888">
+    <button onclick="adminLogin()">登录</button>
+
+    <div id="set" style="display:none">
+        <h2>系统配置</h2>
+        <div class="item"><label>数据库地址</label><input id="h"></div>
+        <div class="item"><label>数据库账号</label><input id="u"></div>
+        <div class="item"><label>数据库密码</label><input id="p"></div>
+        <div class="item"><label>数据库名</label><input id="n"></div>
+        <div class="item"><label>默认歌词颜色</label><input type="color" id="c"></div>
+        <div class="item"><label>染色颜色</label><input type="color" id="ac"></div>
+        <div class="item"><label>字体大小</label><input type="number" id="s"></div>
+        <div class="item"><label>默认音量</label><input type="range" min=0 max=100 id="v"></div>
+        <button onclick="save()">保存配置</button>
     </div>
 
-    <script>
-        // 管理员登录（已改接口）
-        async function adminLogin() {
-            const user = adminUser.value.trim();
-            const pwd = adminPwd.value.trim();
-            const res = await fetch('/api/admin_login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user, pwd })
-            });
-            const data = await res.json();
-            if (data.code === 0) {
-                alert('登录成功');
-                location.href = 'admin_home.html';
-            } else {
-                alert('账号密码错误');
-            }
+<script>
+let config;
+async function adminLogin(){
+    try {
+        // 已修改：api.php?action=admin_login → /api/admin_login
+        let res = await fetch('/api/admin_login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'user='+auser.value+'&pwd='+apwd.value
+        });
+        let d = await res.json();
+        if(d.code === 0){
+            document.querySelector('h2').remove();
+            auser.remove();
+            apwd.remove();
+            document.querySelector('button').remove();
+            getConfig();
+            set.style.display='block';
+        }else{
+            alert('登录失败：'+d.msg);
         }
-    </script>
+    }catch(e){
+        alert('接口请求失败，请检查服务环境');
+        console.error(e);
+    }
+}
+
+async function getConfig(){
+    try {
+        // 已修改：api.php?action=get_config → /api/get_config
+        let res = await fetch('/api/get_config');
+        let d = await res.json();
+        config = d.data || {};
+        h.value = config.db_host || 'localhost';
+        u.value = config.db_user || 'root';
+        p.value = config.db_pwd || '';
+        n.value = config.db_name || 'ktv_system';
+        c.value = config.lyric_color || '#ffffff';
+        ac.value = config.lyric_active_color || '#ff3c3c';
+        s.value = config.lyric_size || 28;
+        v.value = config.volume || 80;
+    }catch(e){}
+}
+
+async function save(){
+    try {
+        // 已修改：api.php?action=save_config → /api/save_config
+        await fetch('/api/save_config', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: `db_host=${h.value}&db_user=${u.value}&db_pwd=${p.value}&db_name=${n.value}&lyric_color=${c.value}&lyric_active_color=${ac.value}&lyric_size=${s.value}&volume=${v.value}`
+        });
+        alert('保存成功');
+    }catch(e){}
+}
+</script>
 </body>
 </html>
