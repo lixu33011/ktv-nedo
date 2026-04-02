@@ -1,56 +1,376 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>播放页</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>KTV播放</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial; }
-        body { background: #111; color: #fff; padding: 20px; }
-        .song-item { padding: 12px; background: #222; margin: 8px 0; border-radius: 8px; display: flex; justify-content: space-between; }
-        button { padding: 6px 10px; background: #ff3c3c; border: none; border-radius: 4px; color: #fff; cursor: pointer; }
-        canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; }
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{overflow:hidden;background:#000;color:#fff;font-family:Arial}
+        #bg{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:1}
+        
+        .qrcode{position:fixed;top:10px;left:10px;z-index:999;background:#fff;padding:8px;border-radius:8px}
+        .qrcode img{width:100px;height:100px;display:block}
+        .qrcode-text{font-size:12px;color:#000;text-align:center;margin-top:4px}
+
+        #loginPage{position:fixed;z-index:99;background:#222;padding:30px;border-radius:12px;top:50%;left:50%;transform:translate(-50%,-50%)}
+        #loginPage input{width:100%;margin:10px 0;padding:12px;border-radius:8px}
+        #loginPage button{width:100%;padding:12px;background:#ff3c3c;color:#fff;border:none;border-radius:8px;margin-top:5px}
+        .lyric{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10;text-align:center;width:90%;display:none}
+        .l{font-size:24px;color:#ccc;margin:10px 0}
+        .c{font-size:var(--size);color:var(--color);margin:20px 0}
+        .n{font-size:24px;color:#ccc;margin:10px 0}
+        .c span{transition:color 0.05s ease}
+        
+        .control{
+            position:fixed;bottom:30px;left:50%;transform:translateX(-50%);
+            z-index:99;display:flex;align-items:center;gap:16px;
+            background:rgba(0,0,0,0.7);padding:12px 24px;border-radius:40px;
+            display:none
+        }
+        .control button{
+            width:56px;height:56px;border-radius:50%;border:none;
+            cursor:pointer;display:flex;align-items:center;justify-content:center;
+            font-size:24px;transition:all 0.2s
+        }
+        .btn-play{background:#ffcc00;color:#000}
+        .btn-pause{background:#666;color:#fff}
+        .volume-wrap{
+            display:flex;align-items:center;gap:8px;margin-left:12px
+        }
+        .volume-icon{font-size:28px}
+        #volumeSlider{
+            width:120px;height:6px;border-radius:3px;
+            background:#444;outline:none;appearance:none
+        }
+        #volumeSlider::-webkit-slider-thumb{
+            appearance:none;width:18px;height:18px;border-radius:50%;
+            background:#fff;cursor:pointer
+        }
+        .float-btn{position:fixed;right:20px;bottom:100px;z-index:99;display:none}
+        .float-btn button{
+            background:rgba(51,51,51,0.8);backdrop-filter:blur(10px);
+            color:#fff;border:none;padding:12px 16px;border-radius:12px;
+            margin:5px 0;display:block;font-size:16px
+        }
+        
+        #panel{
+            position:fixed;top:0;right:-320px;width:320px;height:100vh;
+            background:rgba(17,17,17,0.95);backdrop-filter:blur(10px);
+            padding:20px;transition:.3s;z-index:98;overflow-y:auto
+        }
+        #panel.show{right:0}
+
+        .song-item{
+            padding:12px 10px;
+            background:#222;
+            margin:8px 0;
+            border-radius:8px;
+            display:flex;
+            flex-direction:column;
+            gap:8px;
+        }
+        .song-name{
+            text-align:center;
+            font-size:14px;
+            padding-bottom:4px;
+        }
+        .song-buttons{
+            display:flex;
+            justify-content:center;
+            gap:6px;
+            flex-wrap:wrap;
+        }
+        .song-buttons button{
+            padding:5px 8px;
+            border:none;
+            border-radius:6px;
+            font-size:12px;
+            cursor:pointer;
+        }
+        .btn-play-now{background:#0c0;color:#fff}
+        .btn-move{background:#fc0;color:#000}
+        .btn-del{background:#f30;color:#fff}
+
     </style>
 </head>
 <body>
-    <canvas id="bg"></canvas>
-    <h2>我的歌单</h2>
-    <div id="songList"></div>
 
-    <script type="module">
-        import { SpectrumBarBg } from './bg1.js';
-        const audio = new Audio();
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 512;
-        const source = audioCtx.createMediaElementSource(audio);
-        source.connect(analyser);
-        analyser.connect(audioCtx.destination);
-        SpectrumBarBg.init(document.getElementById('bg'), analyser);
+<div class="qrcode">
+    <img id="qrcodeImg" alt="扫码回首页">
+    <div class="qrcode-text">扫码回首页</div>
+</div>
 
-        const uid = new URLSearchParams(location.search).get('uid');
-        loadList();
+<div id="bg"></div>
+<div id="loginPage">
+    <h3>登录后播放</h3>
+    <input id="user" placeholder="账号">
+    <input id="pwd" type="password" placeholder="密码">
+    <button onclick="userLogin()">登录</button>
+</div>
 
-        // 加载歌单（已改接口）
-        async function loadList() {
-            const res = await fetch('/api/my_list?uid=' + uid);
-            const data = await res.json();
-            const html = data.data.map(item => `
-                <div class="song-item">
-                    <div>${item.song_name} - ${item.artist}</div>
-                    <div>
-                        <button onclick="del(${item.id})">删除</button>
-                    </div>
-                </div>
-            `).join('');
-            songList.innerHTML = html;
-        }
+<div class="lyric" id="lyric"></div>
+<div class="control">
+    <button id="btnPlay" class="btn-play" onclick="toggle()">▶️</button>
+    <button id="btnNext" class="btn-play" onclick="next()">⏭️</button>
+    <div class="volume-wrap">
+        <span class="volume-icon">🔊</span>
+        <input type="range" id="volumeSlider" min="0" max="100" value="80">
+    </div>
+</div>
 
-        // 删除歌曲（已改接口）
-        async function del(id) {
-            await fetch('/api/del_song?id=' + id);
-            loadList();
-        }
-    </script>
+<div class="float-btn">
+    <button onclick="panel.classList.toggle('show')">点歌单</button>
+</div>
+<div id="panel"></div>
+<audio id="aud" crossorigin="anonymous">
+
+<script>
+let uid, aud = document.getElementById('aud'), config, currentId;
+const loginPage = document.getElementById('loginPage');
+const lyricBox = document.getElementById('lyric');
+const controlBox = document.querySelector('.control');
+const floatBtn = document.querySelector('.float-btn');
+const panel = document.getElementById('panel');
+const btnPlay = document.getElementById('btnPlay');
+const volumeSlider = document.getElementById('volumeSlider');
+let lrcArr = [];
+
+let audioContext, audioAnalyser, isAudioReady = false;
+let currentBgScript = null;
+let songListCache = [];
+
+const homeUrl = window.location.origin + "/index.html";
+document.getElementById("qrcodeImg").src = 
+"https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=" + encodeURIComponent(homeUrl);
+
+volumeSlider.addEventListener('input', () => {
+  aud.volume = volumeSlider.value / 100;
+});
+
+const bgFiles = [
+  './bg1.js','./bg2.js','./bg3.js','./bg4.js','./bg5.js','./bg6.js'
+];
+
+async function initAudioContext() {
+  if (audioContext) return;
+  audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioContext.state === 'suspended') await audioContext.resume();
+  audioAnalyser = audioContext.createAnalyser();
+  audioAnalyser.fftSize = 1024;
+  const source = audioContext.createMediaElementSource(aud);
+  source.connect(audioAnalyser);
+  audioAnalyser.connect(audioContext.destination);
+  isAudioReady = true;
+}
+
+async function loadRandomBackground() {
+  const bgContainer = document.getElementById('bg');
+  bgContainer.innerHTML = '';
+  if (currentBgScript) {
+    try { document.body.removeChild(currentBgScript); } catch(e){}
+  }
+
+  const randomBg = bgFiles[Math.floor(Math.random() * bgFiles.length)];
+  const canvas = document.createElement('canvas');
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  bgContainer.appendChild(canvas);
+
+  currentBgScript = document.createElement('script');
+  currentBgScript.type = 'module';
+  currentBgScript.src = randomBg;
+  
+  currentBgScript.onload = async () => {
+    while (!isAudioReady) await new Promise(r => setTimeout(r, 50));
+    const module = await import(randomBg);
+    const bg = module.SpectrumBarBg || module.ParticleWaveBg || module.GradientFlowBg;
+    if (bg && bg.init) bg.init(canvas, audioAnalyser);
+  };
+  
+  document.body.appendChild(currentBgScript);
+}
+
+// ======================
+// ✅ 登录（已改新接口）
+// ======================
+async function userLogin() {
+  try {
+    let res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'user=' + encodeURIComponent(user.value) + '&pwd=' + encodeURIComponent(pwd.value)
+    });
+    let d = await res.json();
+    if (d.code === 0) {
+      uid = d.uid;
+      loginPage.style.display = 'none';
+      lyricBox.style.display = 'block';
+      controlBox.style.display = 'flex';
+      floatBtn.style.display = 'block';
+
+      await initAudioContext();
+      loadConfig();
+      loadList();
+      playNext();
+    } else {
+      alert(d.msg);
+    }
+  } catch (e) { console.error(e); }
+}
+
+// ======================
+// ✅ 配置（已改新接口）
+// ======================
+async function loadConfig() {
+  let res = await fetch('/api/get_config');
+  let d = await res.json();
+  config = d.data || {};
+  document.documentElement.style.setProperty('--color', config.lyric_color || '#ffffff');
+  document.documentElement.style.setProperty('--active', config.lyric_active_color || '#ff3c3c');
+  document.documentElement.style.setProperty('--size', (config.lyric_size || 28) + 'px');
+  const vol = config.volume || 80;
+  aud.volume = vol / 100;
+  volumeSlider.value = vol;
+}
+
+async function toggle() {
+  if (!isAudioReady) await initAudioContext();
+  if (aud.paused) {
+    try { await aud.play(); btnPlay.className = 'btn-pause'; btnPlay.innerHTML = '⏸️'; } catch (e) {}
+  } else {
+    aud.pause(); btnPlay.className = 'btn-play'; btnPlay.innerHTML = '▶️';
+  }
+}
+
+// ======================
+// ✅ 播放指定歌曲
+// ======================
+async function playTargetSong(song) {
+  if (!isAudioReady) await initAudioContext();
+  await loadRandomBackground();
+  
+  currentId = song.id;
+  let urlData = await fetch(`https://music-api.gdstudio.xyz/api.php?types=url&source=${song.source}&id=${song.track_id}`);
+  let urlJson = await urlData.json();
+  aud.src = urlJson.url;
+  
+  try { await aud.play(); btnPlay.className = 'btn-pause'; btnPlay.innerHTML = '⏸️'; } catch(e) {}
+
+  let lrcData = await fetch(`https://music-api.gdstudio.xyz/api.php?types=lyric&source=${song.source}&id=${song.track_id}`);
+  let lrcJson = await lrcData.json();
+  parseLrc(lrcJson.lyric || '');
+}
+
+// ======================
+// ✅ 播放下一首（已改接口）
+// ======================
+async function playNext() {
+  if (!isAudioReady) await initAudioContext();
+  let res = await fetch('/api/my_list?uid=' + uid);
+  let d = await res.json();
+  if (!d.data.length) {
+    aud.pause(); btnPlay.className = 'btn-play'; btnPlay.innerHTML = '▶️'; return;
+  }
+  await loadRandomBackground();
+  let s = d.data[0];
+  currentId = s.id;
+  let urlData = await fetch(`https://music-api.gdstudio.xyz/api.php?types=url&source=${s.source}&id=${s.track_id}`);
+  let urlJson = await urlData.json();
+  aud.src = urlJson.url;
+  try { await aud.play(); btnPlay.className = 'btn-pause'; btnPlay.innerHTML = '⏸️'; } catch(e) {}
+  let lrcData = await fetch(`https://music-api.gdstudio.xyz/api.php?types=lyric&source=${s.source}&id=${s.track_id}`);
+  let lrcJson = await lrcData.json();
+  parseLrc(lrcJson.lyric || '');
+}
+
+function parseLrc(text) {
+  lrcArr = [];
+  let lines = text.split('\n');
+  lines.forEach(line => {
+    let match = line.match(/\[(\d+):(\d+)\.(\d+)\](.*)/);
+    if (match) {
+      let time = parseInt(match[1]) * 60 + parseInt(match[2]) + parseInt(match[3]) / 1000;
+      lrcArr.push([time, match[4] || '']);
+    }
+  });
+}
+
+aud.ontimeupdate = () => {
+  let t = aud.currentTime;
+  let curr = -1;
+  for (let i = 0; i < lrcArr.length; i++) {
+    if (lrcArr[i][0] <= t) curr = i;
+  }
+  if (curr < 0 || lrcArr.length === 0) return;
+  let last = curr > 0 ? lrcArr[curr - 1][1] : '...';
+  let now = lrcArr[curr][1];
+  let next = curr < lrcArr.length - 1 ? lrcArr[curr + 1][1] : '...';
+  let total = curr < lrcArr.length - 1 ? (lrcArr[curr + 1][0] - lrcArr[curr][0]) : 2;
+  let pass = t - lrcArr[curr][0];
+  let per = Math.min(1, pass / total);
+  let len = now.length;
+  let idx = Math.floor(len * per);
+  let html = `<span style="color:var(--active);">${now.substring(0, idx)}</span><span style="color:var(--color);">${now.substring(idx)}</span>`;
+  lyricBox.innerHTML = `<div class="l">${last}</div><div class="c">${html}</div><div class="n">${next}</div>`;
+};
+
+aud.onended = async () => {
+  await fetch('/api/del_song?id=' + currentId);
+  loadList();
+  playNext();
+};
+
+async function next() {
+  await fetch('/api/del_song?id=' + currentId);
+  loadList();
+  playNext();
+}
+
+// ======================
+// ✅ 歌单列表（已改接口）
+// ======================
+async function loadList() {
+  let res = await fetch('/api/my_list?uid=' + uid);
+  let d = await res.json();
+  songListCache = d.data || [];
+  panel.innerHTML = '<h3>点歌列表</h3>';
+  songListCache.forEach((s, idx) => {
+    let div = document.createElement('div');
+    div.className = 'song-item';
+    div.innerHTML = `
+      <div class="song-name">${s.song_name} - ${s.artist}</div>
+      <div class="song-buttons">
+        <button class="btn-play-now" onclick="playThisSong(${idx})">播放</button>
+        <button class="btn-move" onclick="sortSong(${s.id},'up')">上移</button>
+        <button class="btn-move" onclick="sortSong(${s.id},'down')">下移</button>
+        <button class="btn-del" onclick="delSong(${s.id})">删除</button>
+      </div>
+    `;
+    panel.appendChild(div);
+  });
+}
+
+window.playThisSong = function(index){
+  const song = songListCache[index];
+  if(song) playTargetSong(song);
+}
+
+// ======================
+// ✅ 排序/删除（已改接口）
+// ======================
+async function sortSong(id, t) {
+  await fetch('/api/sort', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `id=${id}&type=${t}`
+  });
+  loadList();
+}
+async function delSong(id) {
+  await fetch('/api/del_song?id=' + id);
+  loadList();
+}
+</script>
 </body>
 </html>
