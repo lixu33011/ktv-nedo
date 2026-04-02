@@ -7,7 +7,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 流转字符串
+// 工具函数
 function streamToString(stream) {
   return new Promise((resolve, reject) => {
     let str = '';
@@ -17,33 +17,32 @@ function streamToString(stream) {
   });
 }
 
-// 读取 Blob（不存在则返回默认值）
-async function readBlob(filename, defaultValue) {
+// 读取 Blob（固定路径）
+async function readBlob(path, defaultValue) {
   try {
-    const blob = await get(filename);
+    const blob = await get(path);
     const str = await streamToString(blob.stream);
     return JSON.parse(str);
-  } catch (e) {
+  } catch {
     return defaultValue;
   }
 }
 
-// 写入 Blob
-async function writeBlob(filename, data) {
-  await put(filename, JSON.stringify(data, null, 2), {
+// 写入 Blob（固定路径，不再自动加随机串）
+async function writeBlob(path, data) {
+  await put(path, JSON.stringify(data, null, 2), {
     access: 'public',
-    contentType: 'application/json'
+    contentType: 'application/json',
+    addRandomSuffix: false  // 👈 关键：关闭随机后缀
   });
 }
 
-// =============================================
-// ✅ 【系统初始化：第一次运行自动创建所有数据】
-// =============================================
+// 初始化系统（自动创建默认数据）
 async function initSystem() {
-  // 1. 初始化配置
-  let config = await readBlob('config.json', null);
-  if (!config) {
-    config = {
+  // 初始化配置
+  let cfg = await readBlob('config.json');
+  if (!cfg) {
+    cfg = {
       db_host: "localhost",
       db_user: "root",
       db_pwd: "",
@@ -53,11 +52,11 @@ async function initSystem() {
       lyric_size: 28,
       volume: 80
     };
-    await writeBlob('config.json', config);
+    await writeBlob('config.json', cfg);
   }
 
-  // 2. 初始化用户（自动创建测试账号）
-  let users = await readBlob('users.json', null);
+  // 初始化用户
+  let users = await readBlob('users.json');
   if (!users) {
     users = [
       { id: 1, username: "user1", password: "123456", create_time: new Date().toISOString() },
@@ -66,19 +65,18 @@ async function initSystem() {
     await writeBlob('users.json', users);
   }
 
-  // 3. 初始化歌单（空）
-  let song_list = await readBlob('song_list.json', null);
-  if (!song_list) {
-    song_list = [];
-    await writeBlob('song_list.json', song_list);
+  // 初始化歌单
+  let songs = await readBlob('song_list.json');
+  if (!songs) {
+    await writeBlob('song_list.json', []);
   }
 }
-// 项目启动时自动初始化
-initSystem().then();
+initSystem().catch(console.error);
 
 // ------------------------------
-// 1. 管理员登录
+// 接口
 // ------------------------------
+
 app.post('/api/admin_login', (req, res) => {
   const { user, pwd } = req.body;
   if (user === 'admin' && pwd === 'admin888') {
@@ -87,44 +85,16 @@ app.post('/api/admin_login', (req, res) => {
   res.json({ code: 1, msg: '账号或密码错误' });
 });
 
-// ------------------------------
-// 2. 获取配置
-// ------------------------------
 app.get('/api/get_config', async (req, res) => {
-  const data = await readBlob('config.json', {});
+  const data = await readBlob('config.json');
   res.json({ code: 0, data });
 });
 
-// ------------------------------
-// 3. 保存配置
-// ------------------------------
 app.post('/api/save_config', async (req, res) => {
   await writeBlob('config.json', req.body);
   res.json({ code: 0, msg: '保存成功' });
 });
 
-// ------------------------------
-// 4. 用户注册
-// ------------------------------
-app.post('/api/reg', async (req, res) => {
-  const { user, pwd } = req.body;
-  let users = await readBlob('users.json', []);
-  if (users.some(u => u.username === user)) {
-    return res.json({ code: 1, msg: '用户名已存在' });
-  }
-  users.push({
-    id: Date.now(),
-    username: user,
-    password: pwd,
-    create_time: new Date().toISOString()
-  });
-  await writeBlob('users.json', users);
-  res.json({ code: 0, msg: '注册成功' });
-});
-
-// ------------------------------
-// 5. 用户登录
-// ------------------------------
 app.post('/api/login', async (req, res) => {
   const { user, pwd } = req.body;
   const users = await readBlob('users.json', []);
@@ -133,40 +103,35 @@ app.post('/api/login', async (req, res) => {
   res.json({ code: 1, msg: '账号或密码错误' });
 });
 
-// ------------------------------
-// 6. 添加歌曲
-// ------------------------------
+app.post('/api/reg', async (req, res) => {
+  const { user, pwd } = req.body;
+  const users = await readBlob('users.json', []);
+  if (users.some(x => x.username === user)) {
+    return res.json({ code: 1, msg: '用户名已存在' });
+  }
+  users.push({ id: Date.now(), username: user, password: pwd, create_time: new Date().toISOString() });
+  await writeBlob('users.json', users);
+  res.json({ code: 0, msg: '注册成功' });
+});
+
+app.get('/api/my_list', async (req, res) => {
+  const { uid } = req.query;
+  const list = await readBlob('song_list.json', []);
+  res.json({ code: 0, data: list.filter(s => s.user_id == uid).sort((a,b)=>a.sort-b.sort) });
+});
+
 app.post('/api/add_song', async (req, res) => {
   const { uid, tid, name, artist, source } = req.body;
-  let list = await readBlob('song_list.json', []);
-  const maxSort = list.filter(s => s.user_id == uid).reduce((m, s) => Math.max(m, s.sort || 0), 0);
+  const list = await readBlob('song_list.json', []);
+  const maxSort = list.filter(s => s.user_id == uid).reduce((m,s)=>Math.max(m,s.sort||0),0);
   list.push({
-    id: Date.now(),
-    user_id: Number(uid),
-    track_id: tid,
-    song_name: name,
-    artist: artist,
-    source: source || 'netease',
-    sort: maxSort + 1,
-    create_time: new Date().toISOString()
+    id: Date.now(), user_id: +uid, track_id: tid, song_name: name, artist: artist,
+    source: source||'netease', sort: maxSort+1, create_time: new Date().toISOString()
   });
   await writeBlob('song_list.json', list);
   res.json({ code: 0 });
 });
 
-// ------------------------------
-// 7. 我的歌单
-// ------------------------------
-app.get('/api/my_list', async (req, res) => {
-  const { uid } = req.query;
-  const list = await readBlob('song_list.json', []);
-  const my = list.filter(s => s.user_id == uid).sort((a, b) => a.sort - b.sort);
-  res.json({ code: 0, data: my });
-});
-
-// ------------------------------
-// 8. 删除歌曲
-// ------------------------------
 app.get('/api/del_song', async (req, res) => {
   const { id } = req.query;
   let list = await readBlob('song_list.json', []);
@@ -175,27 +140,21 @@ app.get('/api/del_song', async (req, res) => {
   res.json({ code: 0 });
 });
 
-// ------------------------------
-// 9. 排序
-// ------------------------------
 app.post('/api/sort', async (req, res) => {
   const { id, type } = req.body;
   let list = await readBlob('song_list.json', []);
   const song = list.find(s => s.id == id);
-  if (!song) return res.json({ code: 1 });
-
-  const userSongs = list.filter(s => s.user_id === song.user_id).sort((a, b) => a.sort - b.sort);
-  const index = userSongs.findIndex(s => s.id == id);
-
-  if (type === 'up' && index > 0) {
-    [userSongs[index].sort, userSongs[index - 1].sort] = [userSongs[index - 1].sort, userSongs[index].sort];
+  if (!song) return res.json({ code:1 });
+  const userSongs = list.filter(s=>s.user_id===song.user_id).sort((a,b)=>a.sort-b.sort);
+  const idx = userSongs.findIndex(s=>s.id==id);
+  if (type === 'up' && idx > 0) {
+    [userSongs[idx].sort, userSongs[idx-1].sort] = [userSongs[idx-1].sort, userSongs[idx].sort];
   }
-  if (type === 'down' && index < userSongs.length - 1) {
-    [userSongs[index].sort, userSongs[index + 1].sort] = [userSongs[index + 1].sort, userSongs[index].sort];
+  if (type === 'down' && idx < userSongs.length-1) {
+    [userSongs[idx].sort, userSongs[idx+1].sort] = [userSongs[idx+1].sort, userSongs[idx].sort];
   }
-
   await writeBlob('song_list.json', list);
-  res.json({ code: 0 });
+  res.json({ code:0 });
 });
 
 module.exports = app;
