@@ -249,7 +249,7 @@ async function toggle() {
 async function playTargetSong(song) {
   if (!isAudioReady) await initAudioContext();
   await loadRandomBackground();
-  
+   const source = song.source || 'netease';
   currentId = song.id;
   let urlData = await fetch(`https://music-api.gdstudio.xyz/api.php?types=url&source=${song.source}&id=${song.track_id}`);
   let urlJson = await urlData.json();
@@ -275,6 +275,7 @@ async function playNext() {
   await loadRandomBackground();
   let s = d.data[0];
   currentId = s.id;
+     const source = song.source || 'netease';
   let urlData = await fetch(`https://music-api.gdstudio.xyz/api.php?types=url&source=${s.source}&id=${s.track_id}`);
   let urlJson = await urlData.json();
   aud.src = urlJson.url;
