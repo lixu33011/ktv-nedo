@@ -36,7 +36,7 @@
 let config;
 async function adminLogin(){
     try {
-        // 已修改：api.php?action=admin_login → /api/admin_login
+        // ✅✅✅ 这里已经改成 正确的管理员接口：/api/admin_login
         let res = await fetch('/api/admin_login', {
             method: 'POST',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -61,7 +61,6 @@ async function adminLogin(){
 
 async function getConfig(){
     try {
-        // 已修改：api.php?action=get_config → /api/get_config
         let res = await fetch('/api/get_config');
         let d = await res.json();
         config = d.data || {};
@@ -78,7 +77,6 @@ async function getConfig(){
 
 async function save(){
     try {
-        // 已修改：api.php?action=save_config → /api/save_config
         await fetch('/api/save_config', {
             method: 'POST',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
