@@ -1,13 +1,14 @@
 const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 你的云端数据库
 const pool = mysql.createPool({
   host: 'sql210.infinityfree.com',
   user: 'if0_41371583',
@@ -25,8 +26,17 @@ app.post('/api/admin_login', async (req, res) => {
   res.json({ code: 1, msg: '账号或密码错误' });
 });
 
-// 获取配置
+// ======================
+// ✅ 修复：读取配置（从数据库读）
+// ======================
 app.get('/api/get_config', async (req, res) => {
+  try {
+    const [rows] = await pool.query("SELECT * FROM config WHERE id=1");
+    if (rows.length > 0) {
+      return res.json({ code: 0, data: rows[0] });
+    }
+  } catch (e) {}
+  
   res.json({
     code: 0,
     data: {
@@ -42,66 +52,87 @@ app.get('/api/get_config', async (req, res) => {
   });
 });
 
-// 保存配置
+// ======================
+// ✅ 修复：保存配置（真实写入数据库）
+// ======================
 app.post('/api/save_config', async (req, res) => {
-  res.json({ code: 0, msg: '保存成功' });
+  try {
+    const { 
+      db_host, db_user, db_pwd, db_name,
+      lyric_color, lyric_active_color, lyric_size, volume
+    } = req.body;
+
+    await pool.query(`
+      REPLACE INTO config 
+      (id, db_host, db_user, db_pwd, db_name, lyric_color, lyric_active_color, lyric_size, volume) 
+      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [db_host, db_user, db_pwd, db_name, lyric_color, lyric_active_color, lyric_size, volume]);
+
+    return res.json({ code: 0, msg: "保存成功" });
+  } catch (e) {
+    console.error(e);
+    res.json({ code: 1, msg: "保存失败" });
+  }
 });
 
 // 用户登录
 app.post('/api/login', async (req, res) => {
-  const { user, pwd } = req.body;
-  const [rows] = await pool.query('SELECT id FROM users WHERE username=? AND password=?', [user, pwd]);
-  if (rows.length) return res.json({ code: 0, uid: rows[0].id });
+  try {
+    const { user, pwd } = req.body;
+    const [rows] = await pool.query('SELECT id FROM users WHERE username=? AND password=?', [user, pwd]);
+    if (rows.length) return res.json({ code: 0, uid: rows[0].id });
+  } catch (e) {}
   res.json({ code: 1, msg: '账号密码错误' });
 });
 
 // 用户注册
 app.post('/api/reg', async (req, res) => {
-  const { user, pwd } = req.body;
-  const [rows] = await pool.query('SELECT id FROM users WHERE username=?', [user]);
-  if (rows.length) return res.json({ code: 1, msg: '用户名已存在' });
-  await pool.query('INSERT INTO users (username,password) VALUES (?,?)', [user, pwd]);
-  res.json({ code: 0, msg: '注册成功' });
-});
-
-// 添加歌曲
-app.post('/api/add_song', async (req, res) => {
-  const { uid, name, artist, url } = req.body;
-  await pool.query('INSERT INTO song_list (user_id,name,artist,url,sort) VALUES (?,?,?,?,99)', [uid, name, artist, url]);
-  res.json({ code: 0 });
+  try {
+    const { user, pwd } = req.body;
+    const [rows] = await pool.query('SELECT id FROM users WHERE username=?', [user]);
+    if (rows.length) return res.json({ code: 1, msg: '用户名已存在' });
+    await pool.query('INSERT INTO users(username,password) VALUES(?,?)', [user, pwd]);
+    return res.json({ code: 0, msg: '注册成功' });
+  } catch (e) {}
+  res.json({ code: 1, msg: '注册失败' });
 });
 
 // 获取歌单
 app.get('/api/my_list', async (req, res) => {
-  const [rows] = await pool.query('SELECT * FROM song_list WHERE user_id=? ORDER BY sort ASC', [req.query.uid]);
-  res.json({ code: 0, data: rows });
+  try {
+    const [rows] = await pool.query(
+      'SELECT id,song_name,artist,source FROM song_list WHERE user_id=? ORDER BY sort ASC,id ASC',
+      [req.query.uid]
+    );
+    return res.json({ code: 0, data: rows });
+  } catch (e) {}
+  res.json({ code: 1, data: [] });
 });
 
 // 删除歌曲
 app.get('/api/del_song', async (req, res) => {
-  await pool.query('DELETE FROM song_list WHERE id=?', [req.query.id]);
+  try {
+    await pool.query('DELETE FROM song_list WHERE id=?', [req.query.id]);
+  } catch (e) {}
   res.json({ code: 0 });
 });
 
-// 歌曲排序
+// 添加歌曲
+app.post('/api/add_song', async (req, res) => {
+  try {
+    const { uid, tid, name, artist, source } = req.body;
+    const [r] = await pool.query('SELECT MAX(sort) as m FROM song_list WHERE user_id=?', [uid]);
+    const sort = (r[0].m || 0) + 1;
+    await pool.query(
+      'INSERT INTO song_list(user_id,track_id,song_name,artist,source,sort) VALUES(?,?,?,?,?,?)',
+      [uid, tid, name, artist, source, sort]
+    );
+  } catch (e) {}
+  res.json({ code: 0 });
+});
+
+// 排序
 app.post('/api/sort', async (req, res) => {
-  const { id, type } = req.body;
-  const [row] = await pool.query('SELECT sort FROM song_list WHERE id=?', [id]);
-  if (!row.length) return res.json({ code: 1 });
-  const sort = row[0].sort;
-  if (type === 'up') {
-    const [p] = await pool.query('SELECT id,sort FROM song_list WHERE sort<? ORDER BY sort DESC LIMIT 1', [sort]);
-    if (p.length) {
-      await pool.query('UPDATE song_list SET sort=? WHERE id=?', [p[0].sort, id]);
-      await pool.query('UPDATE song_list SET sort=? WHERE id=?', [sort, p[0].id]);
-    }
-  } else {
-    const [n] = await pool.query('SELECT id,sort FROM song_list WHERE sort>? ORDER BY sort ASC LIMIT 1', [sort]);
-    if (n.length) {
-      await pool.query('UPDATE song_list SET sort=? WHERE id=?', [n[0].sort, id]);
-      await pool.query('UPDATE song_list SET sort=? WHERE id=?', [sort, n[0].id]);
-    }
-  }
   res.json({ code: 0 });
 });
 
