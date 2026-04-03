@@ -277,16 +277,23 @@ async function playNext() {
   parseLrc(lrcJson.lyric || '');
 }
 
+// 🔥 修复：正则表达式错误已解决
 function parseLrc(text) {
   lrcArr = [];
   let lines = text.split('\n');
-  lines.forEach(line => {
-    let match = line.match(/\[(\d+):(\d+)\.(\d+)\](sslocal://flow/file_open?url=.%2A&flow_extra=eyJsaW5rX3R5cGUiOiJjb2RlX2ludGVycHJldGVyIn0=)/);
+  for (let line of lines) {
+    line = line.trim();
+    let reg = /^\[(\d+):(\d+)\.(\d+)\](.*)$/;
+    let match = line.match(reg);
     if (match) {
-      let time = parseInt(match[1]) * 60 + parseInt(match[2]) + parseInt(match[3]) / 1000;
-      lrcArr.push([time, match[4] || '']);
+      let min = Number(match[1]);
+      let sec = Number(match[2]);
+      let ms = Number(match[3]);
+      let time = min * 60 + sec + ms / 1000;
+      let content = match[4] || '';
+      lrcArr.push([time, content]);
     }
-  });
+  }
 }
 
 aud.ontimeupdate = () => {
