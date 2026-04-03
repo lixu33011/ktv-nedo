@@ -191,9 +191,6 @@ async function loadRandomBackground() {
   document.body.appendChild(currentBgScript);
 }
 
-// ======================
-// ✅ 登录（已改新接口）
-// ======================
 async function userLogin() {
   try {
     let res = await fetch('/api/login', {
@@ -219,9 +216,6 @@ async function userLogin() {
   } catch (e) { console.error(e); }
 }
 
-// ======================
-// ✅ 配置（已改新接口）
-// ======================
 async function loadConfig() {
   let res = await fetch('/api/get_config');
   let d = await res.json();
@@ -243,28 +237,24 @@ async function toggle() {
   }
 }
 
-// ======================
-// ✅ 播放指定歌曲
-// ======================
 async function playTargetSong(song) {
   if (!isAudioReady) await initAudioContext();
   await loadRandomBackground();
-   const source = song.source || 'netease';
+  
   currentId = song.id;
-  let urlData = await fetch(`https://music-api.gdstudio.xyz/api.php?types=url&source=${song.source}&id=${song.track_id}`);
+  const source = song.source || 'netease';
+  
+  let urlData = await fetch(`https://music-api.gdstudio.xyz/api.php?types=url&source=${source}&id=${song.track_id}`);
   let urlJson = await urlData.json();
   aud.src = urlJson.url;
   
   try { await aud.play(); btnPlay.className = 'btn-pause'; btnPlay.innerHTML = '⏸️'; } catch(e) {}
 
-  let lrcData = await fetch(`https://music-api.gdstudio.xyz/api.php?types=lyric&source=${song.source}&id=${song.track_id}`);
+  let lrcData = await fetch(`https://music-api.gdstudio.xyz/api.php?types=lyric&source=${source}&id=${song.track_id}`);
   let lrcJson = await lrcData.json();
   parseLrc(lrcJson.lyric || '');
 }
 
-// ======================
-// ✅ 播放下一首（已改接口）
-// ======================
 async function playNext() {
   if (!isAudioReady) await initAudioContext();
   let res = await fetch('/api/my_list?uid=' + uid);
@@ -275,12 +265,14 @@ async function playNext() {
   await loadRandomBackground();
   let s = d.data[0];
   currentId = s.id;
-     const source = song.source || 'netease';
-  let urlData = await fetch(`https://music-api.gdstudio.xyz/api.php?types=url&source=${s.source}&id=${s.track_id}`);
+  const source = s.source || 'netease';
+  
+  let urlData = await fetch(`https://music-api.gdstudio.xyz/api.php?types=url&source=${source}&id=${s.track_id}`);
   let urlJson = await urlData.json();
   aud.src = urlJson.url;
   try { await aud.play(); btnPlay.className = 'btn-pause'; btnPlay.innerHTML = '⏸️'; } catch(e) {}
-  let lrcData = await fetch(`https://music-api.gdstudio.xyz/api.php?types=lyric&source=${s.source}&id=${s.track_id}`);
+  
+  let lrcData = await fetch(`https://music-api.gdstudio.xyz/api.php?types=lyric&source=${source}&id=${s.track_id}`);
   let lrcJson = await lrcData.json();
   parseLrc(lrcJson.lyric || '');
 }
@@ -289,7 +281,7 @@ function parseLrc(text) {
   lrcArr = [];
   let lines = text.split('\n');
   lines.forEach(line => {
-    let match = line.match(/\[(\d+):(\d+)\.(\d+)\](.*)/);
+    let match = line.match(/\[(\d+):(\d+)\.(\d+)\](sslocal://flow/file_open?url=.%2A&flow_extra=eyJsaW5rX3R5cGUiOiJjb2RlX2ludGVycHJldGVyIn0=)/);
     if (match) {
       let time = parseInt(match[1]) * 60 + parseInt(match[2]) + parseInt(match[3]) / 1000;
       lrcArr.push([time, match[4] || '']);
@@ -328,9 +320,6 @@ async function next() {
   playNext();
 }
 
-// ======================
-// ✅ 歌单列表（已改接口）
-// ======================
 async function loadList() {
   let res = await fetch('/api/my_list?uid=' + uid);
   let d = await res.json();
@@ -357,9 +346,6 @@ window.playThisSong = function(index){
   if(song) playTargetSong(song);
 }
 
-// ======================
-// ✅ 排序/删除（已改接口）
-// ======================
 async function sortSong(id, t) {
   await fetch('/api/sort', {
     method: 'POST',
