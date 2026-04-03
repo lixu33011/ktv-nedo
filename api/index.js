@@ -7,7 +7,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 统一保存：先删旧文件，再写入新文件
 async function save(name, data) {
   const listRes = await list({ prefix: name + "-" });
   for (const blob of listRes.blobs) {
@@ -20,7 +19,6 @@ async function save(name, data) {
   return res;
 }
 
-// 统一读取：找最新的
 async function load(name) {
   try {
     const listRes = await list({ prefix: name + "-" });
@@ -33,7 +31,6 @@ async function load(name) {
   }
 }
 
-// 初始化
 async function init() {
   if (!await load("config")) {
     await save("config", {
@@ -59,7 +56,6 @@ async function init() {
 }
 init().catch(console.error);
 
-// -------------------------- 接口 --------------------------
 app.post("/api/admin_login", (req, res) => {
   const { user, pwd } = req.body;
   if (user === "admin" && pwd === "admin888") {
@@ -103,12 +99,31 @@ app.get("/api/my_list", async (req, res) => {
   res.json({ code: 0, data: list.filter(s => s.user_id == uid).sort((a,b)=>a.sort-b.sort) });
 });
 
-// 🔥 修复：歌曲上移下移（真正修改 sort 值）
+app.post("/api/add_song", async (req, res) => {
+  const { uid, tid, name, artist, source } = req.body;
+  const list = await load("song_list") || [];
+  const max = list.filter(s => s.user_id == uid).reduce((m,s)=>Math.max(m,s.sort||0),0);
+  list.push({ 
+    id: Date.now(), user_id:+uid, track_id:tid, song_name:name, artist:artist, 
+    source: source || "netease", sort: max+1 
+  });
+  await save("song_list", list);
+  res.json({ code: 0 });
+});
+
+app.get("/api/del_song", async (req, res) => {
+  const { id } = req.query;
+  let list = await load("song_list") || [];
+  list = list.filter(s => s.id != id);
+  await save("song_list", list);
+  res.json({ code: 0 });
+});
+
+// ✅ 真正实现上移/下移排序
 app.post("/api/sort", async (req, res) => {
   try {
     const { id, type } = req.body;
     let list = await load("song_list") || [];
-
     const song = list.find(s => s.id == id);
     if (!song) return res.json({ code: 1 });
 
@@ -132,17 +147,6 @@ app.post("/api/sort", async (req, res) => {
   } catch (e) {
     res.json({ code: 1 });
   }
-});
-app.get("/api/del_song", async (req, res) => {
-  const { id } = req.query;
-  let list = await load("song_list") || [];
-  list = list.filter(s => s.id != id);
-  await save("song_list", list);
-  res.json({ code: 0 });
-});
-
-app.post("/api/sort", async (req, res) => {
-  res.json({ code: 0 });
 });
 
 module.exports = app;
