@@ -307,6 +307,8 @@ aud.ontimeupdate = () => {
   let now = lrcArr[curr][1];
   let next = curr < lrcArr.length - 1 ? lrcArr[curr + 1][1] : '...';
   let total = curr < lrcArr.length - 1 ? (lrcArr[curr + 1][0] - lrcArr[curr][0]) : 2;
+    total -= 1.5;
+if (total < 0.2) total = 0.2;
   let pass = t - lrcArr[curr][0];
   let per = Math.min(1, pass / total);
   let len = now.length;
